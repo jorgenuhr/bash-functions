@@ -1,0 +1,77 @@
+#!/usr/bin/env bash
+#
+# Outputs all arguments passed to the function as a RFC 3164 syslog message to 
+# the logfile configured in the $logfile variable, if $logfile is undefined 
+# it will output to a file in the same directory as the script with the same 
+# name as the script with the ".log" extension added to it.
+#
+# ------------------------------------------------------------------------
+# function name:    logger
+#     arguments:
+#                   -f [0..23]      rfc3164 Facility, defaults to 1
+#                   -p [0..7]       rfc3164 Priority, defaults to 6
+#                   -t [0|1|2]      Adds a tag before the message
+#                                       0 = [INFO]
+#                                       1 = [WARN]
+#                                       2 = [ERROR]
+# ------------------------------------------------------------------------
+# 
+
+function logger() {
+    local script="${0##*/}"
+    local file="${logfile:-${0}.log}"
+    local info
+    local tag
+    local fac="1"
+    local sev="6"
+
+    if [[ -z $HOSTNAME ]]; then
+        if [[ -f /proc/sys/kernel/hostname ]]; then
+            read -r HOSTNAME </proc/sys/kernel/hostname
+        else
+            HOSTNAME="unknown"
+        fi
+    fi
+
+    while getopts ":t:f:p:" opt; do
+        case $opt in
+            t)
+                if [[ $OPTARG -eq 0 ]]; then
+                    tag="[INFO]"
+                elif [[ $OPTARG -eq 1 ]]; then
+                    tag="[WARN]"
+                elif [[ $OPTARG -eq 2 ]]; then
+                    tag="[ERROR]"
+                fi
+            ;;
+            f)
+                if [[ $OPTARG -ge 0 ]] && [[ $OPTARG -le 23 ]]; then
+                    fac="$OPTARG"
+                fi
+            ;;
+            p)
+                if [[ $OPTARG -ge 0 ]] && [[ $OPTARG -le 7 ]]; then
+                    sev="$OPTARG"
+                fi
+            ;;
+        esac
+    done
+    shift $((OPTIND-1))
+
+    info="<$(((fac*8)+sev))>"
+    info+=$(printf "%(%FT%T%z)T\n")
+    info+=" $HOSTNAME"
+    info+=" $script"
+    info+="[$$]:"
+    if [[ -n $tag ]]; then
+        info+=" $tag"
+    fi
+    info+=" $@"
+
+    echo "$info" 2>/dev/null >> "$file"
+
+    if [[ $? -gt 0 ]]; then
+        echo "[ERROR] logger function failed to write to the file \"$file\""
+        exit 1
+    fi
+}
